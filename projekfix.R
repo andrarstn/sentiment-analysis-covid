@@ -70,7 +70,7 @@ beritaklas<-naiveBayes(beritatrain,beritatag,laplace=1)
 
 ui <- fluidPage(
   title = "_________________________",
-  headerPanel("Vaksin Gratis Covid"),
+  headerPanel("Covid"),
  
     
     mainPanel(
