@@ -8,7 +8,7 @@ access_token<- "1263740609489022977-F5Wbn6FjMulZIYfhv4K6mW7lCROoVg"
 access_token_secret<- "pe1qgqxiEg03eXboby6V9YzRyufZtIPUlhdeUFs91L8RY"
 setup_twitter_oauth(api_key,api_secret,access_token,access_token_secret)
 
-covid = searchTwitter('vaksin covid',
+covid = searchTwitter('vaksin covid-19',
                    lang="id",
                    n = 1000)
 saveRDS(covid,file = '/home/andra/Documents/Dev/R/tweet-mentah.rds')
