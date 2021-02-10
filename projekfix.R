@@ -1,7 +1,10 @@
 library(shiny)
 library(here)
 library(vroom)
-library(ggplot2)
+library(syuzhet)
+
+
+
 library(plotly)
 library(xml2)
 library(rvest)
@@ -9,16 +12,12 @@ library(NLP)
 library(tm)
 library(e1071)
 library(naivebayes)
-library(dslabs)
-library(tidymodels)
-library(syuzhet)
-library(wordcloud)
-library(SnowballC)
-library(RColorBrewer)
-library(stringr)
-library(dplyr)
 
-twitter<- vroom(here("~/tweetclean-tidy-fix.csv"), delim = ",")
+library(tidymodels)
+library(wordcloud)
+
+
+twitter<- vroom(here("tweetclean-tidy-fix.csv"), delim = ",")
 
 
 review <-as.character(twitter$text)
@@ -32,7 +31,7 @@ data <- data.frame(text=twitter$text,tag=klasifikasi$sentimen)
 
 
 twittertrain <- filter(data, tag=="positif" | tag=="negatif")
-twittertesting <- filter(data, tag=="netral") %>% head(100)
+twittertesting <- filter(data, tag=="netral")
 
 berita<-twittertrain
 tanya<-twittertesting
@@ -42,14 +41,17 @@ tanya<-twittertesting
 #-----------training
 #buat semacam database kamus untuk data berita yang diberikan
 #-------------mengolah text
-beritacorpus<-VCorpus(VectorSource(berita$text))
-#beritacorpus[[4]]$content
-#buat Matrix Kata Dokumen atau Document Term Matrix
-beritaDTM<-DocumentTermMatrix(beritacorpus,control=list(tolower=TRUE,
-                                                        removeNumbers=TRUE,
-                                                        stopwords=TRUE,
-                                                        removePunctuation=TRUE,
-                                                        stemming=TRUE))
+
+
+beritacorpus <- VCorpus(VectorSource(berita$text))
+
+beritaDTM <-DocumentTermMatrix(beritacorpus,control=list(tolower=TRUE,
+                                                       removeNumbers=TRUE,
+                                                       stopwords=TRUE,
+                                                       removePunctuation=TRUE,
+                                                       stemming=FALSE))
+
+
 #inspect(beritaDTM)
 #kemudian jika ingin dilihat kata apa saja yang didapatkan gunakan 
 #beritaDTM$dimnames$Terms
@@ -66,11 +68,43 @@ beritatag <- factor(berita$tag)
 #Selanjutnya kita latih data training tersebut dengan Naive Bayes
 beritaklas<-naiveBayes(beritatrain,beritatag,laplace=1)
 #beritaklas
+
 #---------------------------------
+#proses testing
+#------------------------------
+#-----------testing
+
+
+tanyacorpus <- VCorpus(VectorSource(tanya$text))
+#kemudian dibuat juga Matriks Kata Dokumen (DTM)
+tanyaDTM <-DocumentTermMatrix(tanyacorpus,control=list(tolower=TRUE,
+                                                       removeNumbers=TRUE,
+                                                       stopwords=TRUE,
+                                                       removePunctuation=TRUE,
+                                                       stemming=FALSE))
+#kemudian disusun per satu frekuensi kemunculan tiap kata.
+tanyafreq<-findFreqTerms(tanyaDTM,1)
+
+tanyaDTMfreq <- tanyaDTM[,tanyafreq]
+
+convert_counts<-function(y){y<-ifelse(y>0,"yes","no")}
+tanyatest<-apply(tanyaDTMfreq,MARGIN=2,convert_counts)
+
+#kemudian diprediksikan kata-kata tersebut
+hasil<-predict(beritaklas,tanyatest,type="class")
+
+#ika ingin diketahui hasil prediksinya berupa nilai probabilitas
+hasil1<-predict(beritaklas,tanyatest,type="raw")
+
+
+hasilanalisis<-data.frame(tanya$text,hasil1,hasil)
+
+
+
 
 ui <- fluidPage(
   title = "_________________________",
-  headerPanel("Covid"),
+  headerPanel("COvid"),
  
     
     mainPanel(
@@ -81,6 +115,7 @@ ui <- fluidPage(
                   tabPanel("Data ", DT::dataTableOutput('asli')), # Output Data Dalam Tabel
                   tabPanel("Data training", DT::dataTableOutput('training')), # Output Data Dalam Tabel
                   tabPanel("Data testing", DT::dataTableOutput('testing')), # Output Data Dalam Tabel
+                  tabPanel("Hasil", plotOutput("hasil")), 
                   tabPanel("Wordcloud", plotOutput("Wordcloud"))
       )
     )
@@ -99,32 +134,7 @@ server <- function(input, output, session) {
     DT::datatable(twittertrain, options = list(lengthChange = FALSE))
   })
   output$testing = DT::renderDataTable({
-    #-----------testing
-    
-    
-    tanyacorpus <- VCorpus(VectorSource(tanya$text))
-    #kemudian dibuat juga Matriks Kata Dokumen (DTM)
-    tanyaDTM <-DocumentTermMatrix(tanyacorpus,control=list(tolower=TRUE,
-                                                           removeNumbers=TRUE,
-                                                           stopwords=TRUE,
-                                                           removePunctuation=TRUE,
-                                                           stemming=FALSE))
-    #kemudian disusun per satu frekuensi kemunculan tiap kata.
-    tanyafreq<-findFreqTerms(tanyaDTM,1)
-    
-    tanyaDTMfreq <- tanyaDTM[,tanyafreq]
-    
-    convert_counts<-function(y){y<-ifelse(y>0,"yes","no")}
-    tanyatest<-apply(tanyaDTMfreq,MARGIN=2,convert_counts)
-    
-    #kemudian diprediksikan kata-kata tersebut
-    hasil<-predict(beritaklas,tanyatest,type="class")
-    
-    #ika ingin diketahui hasil prediksinya berupa nilai probabilitas
-    hasil<-predict(beritaklas,tanyatest,type="raw")
-    
-    
-    hasilanalisis<-data.frame(tanya$text,hasil)
+   
 
     DT::datatable(hasilanalisis, options = list(lengthChange = FALSE))
   })
@@ -136,34 +146,34 @@ server <- function(input, output, session) {
     barplot(colSums(s),col=rainbow(10),ylab='count',main='sentiment analisis')
   }, height=400)
   
+  #scatterplot
+  output$hasil <- renderPlot({
+    
+    dat<-data %>% group_by(tag) %>% count(tag)
+    dat<- mutate(dat,hasil="sebelum")
+    has<-data.frame(text=hasilanalisis$tanya.text,tag=hasilanalisis$hasil)
+    new <- rbind(twittertrain, has)
+    dat1<-new %>% group_by(tag) %>% count(tag)
+    dat1<- mutate(dat1,hasil="sesudah")
+    dat1 <- rbind(dat, dat1)
+    ggplot(dat1, aes(x=factor(dat1$hasil),y=dat1$n,fill=dat1$tag))+geom_bar(stat="identity",position=position_dodge()) + labs(y="Jumlah",x="hasil",fill="sentimen")                     
+    
+ }, height=400)
+  
   #wordcloud
   output$Wordcloud <- renderPlot({
     
     
     dokumen <- VCorpus(VectorSource(twitter)) 
     
-    #kemudian kita buat Matriks Kata-kata
-    dokumenDTM<-DocumentTermMatrix(dokumen,control=list(tolower=TRUE,
-                                                        removeNumbers=TRUE,
-                                                        stopwords=TRUE,
-                                                        removePunctuation=TRUE,
-                                                        stemming=TRUE))
-    
 
-    #kemudian bisa kita lihat semua kata-kata yang ada
-    dokumenDTM$dimnames$Terms
-    #melihat kata dengan frekuensi tertentu
-    dokumenfreq<-findFreqTerms(dokumenDTM,3)
-
-    
     dokkudtm <- TermDocumentMatrix(dokumen) 
     em <- as.matrix(dokkudtm)
     ve <- sort(rowSums(em),decreasing=TRUE)
     
     
     de <- data.frame(word = names(ve),freq=ve) 
-    #melihat kata terbesar
-   # head(de, 15)
+
     
     wordcloud(words = de$word, freq = de$freq, min.freq = 1,           
               max.words=50, random.order=FALSE, rot.per=0.35,            
@@ -178,3 +188,5 @@ server <- function(input, output, session) {
 
 
 shinyApp(ui = ui, server = server, options = list(height = "500px"))
+
+
